@@ -37,7 +37,7 @@ namespace TopShelfBonus
 {
   public static class DebugConfig
   {
-    public static bool EnableDebugLogs = true;
+    public static bool EnableDebugLogs = false;
   }
 
   public class TopShelfBonus : MelonMod
@@ -85,26 +85,30 @@ namespace TopShelfBonus
     public static MelonPreferences_Entry<float> NeutralPenalty;
     public static MelonPreferences_Entry<float> MaxNeutralPenalty;
     public static MelonPreferences_Entry<int> IgnoreNeutral;
+    public static MelonPreferences_Entry<int> MinHated;
+    public static MelonPreferences_Entry<int> MaxHated;
     public static MelonPreferences_Entry<float>[] QualityBonuses;
 
     public static void Initialize()
     {
       Category = MelonPreferences.CreateCategory("TopShelfBonus");
-      AboveQualityBonus = Category.CreateEntry("AboveQualityBonus", 0.08f, "Bonus per quality level above required (e.g., 0.15 = 15%)");
+      AboveQualityBonus = Category.CreateEntry("AboveQualityBonus", 0.05f, "Bonus per quality level above required (e.g., 0.15 = 15%)");
       Matching1Bonus = Category.CreateEntry("Matching1Bonus", 0.05f, "Bonus for 1 matching affinity");
       Matching2Bonus = Category.CreateEntry("Matching2Bonus", 0.12f, "Bonus for 2 matching affinities");
       Matching3Bonus = Category.CreateEntry("Matching3Bonus", 0.25f, "Bonus for 3 matching affinities");
+      MinHated = Category.CreateEntry("MinHated", 0, "Minimum number of negatice affinities per customer");
+      MaxHated = Category.CreateEntry("MinHated", 0, "Maximum number of negatice affinities per customer");
       HatedPenalty = Category.CreateEntry("HatedPenalty", -0.15f, "Penalty per hated affinity");
-      MaxHatedPenalty = Category.CreateEntry("MaxHatedPenalty", -0.15f, "Max Penalty for hated affinities");
+      MaxHatedPenalty = Category.CreateEntry("MaxHatedPenalty", -0.45f, "Max Penalty for hated affinities");
       NeutralPenalty = Category.CreateEntry("NeutralPenalty", -0.03f, "Penalty per neutral affinity");
-      MaxNeutralPenalty = Category.CreateEntry("MaxNeutralPenalty", -0.03f, "Max Penalty for neutral affinities");
+      MaxNeutralPenalty = Category.CreateEntry("MaxNeutralPenalty", -0.24f, "Max Penalty for neutral affinities");
       IgnoreNeutral = Category.CreateEntry("IgnoreNeutral", 2, "Ignores number of neutral affinity per matching affinity");
       QualityBonuses = new MelonPreferences_Entry<float>[5];
-      QualityBonuses[0] = Category.CreateEntry("QualityBonus_Trash", -0.08f, "Bonus for Trash quality");
-      QualityBonuses[1] = Category.CreateEntry("QualityBonus_Poor", -0.03f, "Bonus for Poor quality");
+      QualityBonuses[0] = Category.CreateEntry("QualityBonus_Trash", -0.12f, "Bonus for Trash quality");
+      QualityBonuses[1] = Category.CreateEntry("QualityBonus_Poor", -0.05f, "Bonus for Poor quality");
       QualityBonuses[2] = Category.CreateEntry("QualityBonus_Standard", 0.00f, "Bonus for Standard quality");
-      QualityBonuses[3] = Category.CreateEntry("QualityBonus_Premium", 0.03f, "Bonus for Premium quality");
-      QualityBonuses[4] = Category.CreateEntry("QualityBonus_Heavenly", 0.08f, "Bonus for Heavenly quality");
+      QualityBonuses[3] = Category.CreateEntry("QualityBonus_Premium", 0.05f, "Bonus for Premium quality");
+      QualityBonuses[4] = Category.CreateEntry("QualityBonus_Heavenly", 0.12f, "Bonus for Heavenly quality");
     }
   }
 
@@ -136,7 +140,7 @@ namespace TopShelfBonus
       NegativeProperties[guid] = new List<Property>();
 
       // Randomly Assign 0-3 negative properties
-      int negativeCount = UnityEngine.Random.Range(1, 8);
+      int negativeCount = UnityEngine.Random.Range(TopShelfConfig.MinHated.Value, TopShelfConfig.MaxHated.Value);
       var availableProperties = allProperties.Where(p => !customer.customerData.PreferredProperties.Contains(p)).ToList();
       for (int i = 0; i < negativeCount && availableProperties.Count > 0; i++)
       {
@@ -201,7 +205,7 @@ namespace TopShelfBonus
             if (preferredProperties.Contains(property))
               stats.MatchingProperties++;
             else if (negativeProperties.Contains(property))
-              stats.HatedProperties.Add(property); // Deduplicate
+              stats.HatedProperties.Add(property);
             else
               stats.NonMatchingProperties++;
           }
