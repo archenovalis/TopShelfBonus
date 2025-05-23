@@ -29,8 +29,9 @@ using ScheduleOne.Law;
 using System.Collections;
 using ScheduleOne.Money;
 using ScheduleOne.NPCs.Relation;
+using static ScheduleOne.Quests.Contract;
 
-[assembly: MelonInfo(typeof(TopShelfBonus.TopShelfBonus), "TopShelfBonus-Mono", "1.1.0", "Archie", "Adds 5% bonus for delivering items with quality above the customer's required standards.")]
+[assembly: MelonInfo(typeof(TopShelfBonus.TopShelfBonus), "TopShelfBonus-Mono", "1.1.2", "Archie", "Adds 5% bonus for delivering items with quality above the customer's required standards.")]
 [assembly: MelonGame("TVGS", "Schedule I")]
 [assembly: HarmonyDontPatchAll]
 namespace TopShelfBonus
@@ -47,7 +48,7 @@ namespace TopShelfBonus
       try
       {
         HarmonyInstance.PatchAll();
-        MelonLogger.Msg("TopShelfBonus-Mono initialized.");
+        MelonLogger.Msg("TopShelfBonus_Alternative initialized.");
       }
       catch (Exception e)
       {
@@ -61,15 +62,6 @@ namespace TopShelfBonus
       base.OnSceneWasLoaded(buildIndex, sceneName);
       if (sceneName.ToLower() == "main")
         AffinityPopup.GeneratePrefab();
-    }
-
-    private static void LogHarmonyPatches(HarmonyLib.Harmony harmony)
-    {
-      var patchedMethods = harmony.GetPatchedMethods();
-      foreach (var method in patchedMethods)
-      {
-        MelonLogger.Msg($"Patched method: {method.DeclaringType.FullName}.{method.Name}");
-      }
     }
   }
 
@@ -128,6 +120,7 @@ namespace TopShelfBonus
       public int MatchingProperties;
       public int NonMatchingProperties;
       public HashSet<Property> HatedProperties;
+      public List<ItemInstance> Items;
     }
   }
 
@@ -158,17 +151,16 @@ namespace TopShelfBonus
   {
     private const int MaxQualityLevels = 5;
 
-    public static void AddTopShelfBonus(List<Contract.BonusPayment> bonuses, Customer customer, Contract contract, List<ItemInstance> items)
+    public static void AddTopShelfBonus(List<BonusPayment> bonuses, Customer customer, Contract contract, List<ItemInstance> items)
     {
       if (bonuses == null || customer == null || items == null)
       {
-        MelonLogger.Error($"BonusCalculator.AddTopShelfBonus: Invalid input: bonuses={bonuses}, customer={customer}, contract={contract}, items={items}");
+        MelonLogger.Error($"BonusCalculator.AddTopShelfBonus: Invalid input: bonuses={bonuses != null}, customer={customer != null}, contract={contract != null}, items={items != null}");
         return;
       }
 
-      float basePayment = contract != null ? contract.Payment : 0f; // Handle null contract
       if (DebugConfig.EnableDebugLogs)
-        MelonLogger.Msg($"BonusCalculator.AddTopShelfBonus: Processing for customer {customer.NPC.fullName} (GUID: {customer.NPC.GUID}), items={items.Count}, basePayment={basePayment:F2}");
+        MelonLogger.Msg($"BonusCalculator.AddTopShelfBonus: Processing for customer={customer.NPC.fullName}, GUID={customer.NPC.GUID}, items={items.Count}, basePayment={contract.Payment:F2}");
 
       var guid = customer.NPC.GUID;
       if (!NegativeProperties.TryGetValue(guid, out var negativeProperties))
@@ -177,11 +169,16 @@ namespace TopShelfBonus
         negativeProperties = new List<Property>();
         NegativeProperties[guid] = negativeProperties;
       }
+      if (DebugConfig.EnableDebugLogs)
+        MelonLogger.Msg($"BonusCalculator.AddTopShelfBonus: NegativeProperties={negativeProperties.Count}, PreferredProperties={customer.customerData.PreferredProperties.Count}, Standards={customer.customerData.Standards}");
 
       var stats = CalculateItemStats(customer, items, negativeProperties);
-      AddQualityBonus(bonuses, basePayment, stats);
-      AddAffinityBonus(bonuses, basePayment, stats);
-      AddAffinityPenalty(bonuses, basePayment, stats);
+      if (DebugConfig.EnableDebugLogs)
+        MelonLogger.Msg($"BonusCalculator.AddTopShelfBonus: ItemStats - TotalItems={stats.TotalItems}, TotalExcessQuality={stats.TotalExcessQuality}, MatchingProperties={stats.MatchingProperties}, NonMatchingProperties={stats.NonMatchingProperties}, HatedProperties={stats.HatedProperties.Count}");
+
+      AddQualityBonus(bonuses, contract.Payment, stats);
+      AddAffinityBonus(bonuses, contract.Payment, stats);
+      AddAffinityPenalty(bonuses, contract.Payment, stats);
     }
 
     private static ItemStats CalculateItemStats(Customer customer, List<ItemInstance> items, List<Property> negativeProperties)
@@ -189,6 +186,9 @@ namespace TopShelfBonus
       var stats = new ItemStats { HatedProperties = new HashSet<Property>() };
       int requiredQuality = (int)StandardsMethod.GetCorrespondingQuality(customer.customerData.Standards);
       var preferredProperties = new HashSet<Property>(customer.customerData.PreferredProperties);
+      stats.Items = items;
+      if (DebugConfig.EnableDebugLogs)
+        MelonLogger.Msg($"BonusCalculator.CalculateItemStats: Processing {items.Count} items for customer={customer.NPC.fullName}, RequiredQuality={requiredQuality}, PreferredProperties={preferredProperties.Count}, NegativeProperties={negativeProperties.Count}");
 
       foreach (var item in items)
       {
@@ -196,10 +196,16 @@ namespace TopShelfBonus
         {
           stats.TotalItems++;
           int itemQuality = (int)productItem.Quality;
+          if (DebugConfig.EnableDebugLogs)
+            MelonLogger.Msg($"BonusCalculator.CalculateItemStats: Item={productItem.Definition?.Name ?? "null"}, Type={productItem.GetType().FullName}, Quality={itemQuality}, RequiredQuality={requiredQuality}");
+
           if (itemQuality > requiredQuality)
             stats.TotalExcessQuality += itemQuality - requiredQuality;
 
           var properties = (productItem.Definition as ProductDefinition)?.Properties ?? new List<Property>();
+          if (DebugConfig.EnableDebugLogs)
+            MelonLogger.Msg($"BonusCalculator.CalculateItemStats: Item={productItem.Definition?.Name ?? "null"}, Properties={properties.Count}");
+
           foreach (var property in properties)
           {
             if (preferredProperties.Contains(property))
@@ -211,14 +217,21 @@ namespace TopShelfBonus
           }
 
           if (DebugConfig.EnableDebugLogs)
-            MelonLogger.Msg($"BonusCalculator.CalculateItemStats: Item {productItem.Definition?.Name ?? "null"}, Quality={itemQuality}, Properties={properties.Count}, Matching={stats.MatchingProperties}, NonMatching={stats.NonMatchingProperties}, Hated={stats.HatedProperties.Count}");
+            MelonLogger.Msg($"BonusCalculator.CalculateItemStats: Item={productItem.Definition?.Name ?? "null"}, Quality={itemQuality}, TotalExcessQuality={stats.TotalExcessQuality}, Matching={stats.MatchingProperties}, NonMatching={stats.NonMatchingProperties}, Hated={stats.HatedProperties.Count}");
+        }
+        else
+        {
+          if (DebugConfig.EnableDebugLogs)
+            MelonLogger.Msg($"BonusCalculator.CalculateItemStats: Item failed to cast to ProductItemInstance, Type={item?.GetType().FullName ?? "null"}");
         }
       }
 
+      if (DebugConfig.EnableDebugLogs)
+        MelonLogger.Msg($"BonusCalculator.CalculateItemStats: Final Stats - TotalItems={stats.TotalItems}, TotalExcessQuality={stats.TotalExcessQuality}, MatchingProperties={stats.MatchingProperties}, NonMatchingProperties={stats.NonMatchingProperties}, HatedProperties={stats.HatedProperties.Count}");
       return stats;
     }
 
-    private static void AddQualityBonus(List<Contract.BonusPayment> bonuses, float basePayment, ItemStats stats)
+    private static void AddQualityBonus(List<BonusPayment> bonuses, float basePayment, ItemStats stats)
     {
       if (stats.TotalItems == 0)
       {
@@ -227,55 +240,100 @@ namespace TopShelfBonus
         return;
       }
 
-      float avgQuality = stats.TotalExcessQuality / (float)stats.TotalItems;
-      int qualityIndex = Mathf.Clamp(Mathf.FloorToInt(avgQuality), 0, MaxQualityLevels - 1);
-      float qualityBonus = TopShelfConfig.QualityBonuses[qualityIndex].Value * basePayment;
-
-      if (qualityBonus != 0)
-        bonuses.Add(new Contract.BonusPayment("Quality Bonus", qualityBonus));
+      float qualityBonus = 0;
+      float averageQuality = 0;
       if (DebugConfig.EnableDebugLogs)
-        MelonLogger.Msg($"BonusCalculator.AddQualityBonus: Added Quality Bonus={qualityBonus:F2}, AvgQuality={avgQuality:F2}, Index={qualityIndex}");
+        MelonLogger.Msg($"BonusCalculator.AddQualityBonus: Processing {stats.TotalItems} items, basePayment={basePayment:F2}, QualityBonuses=[{string.Join(", ", TopShelfConfig.QualityBonuses.Select(q => q.Value.ToString("F2")))}], AboveQualityBonus={TopShelfConfig.AboveQualityBonus.Value:F2}");
+
+      foreach (var item in stats.Items)
+      {
+        var qualityItem = item as QualityItemInstance;
+        if (qualityItem == null)
+        {
+          if (DebugConfig.EnableDebugLogs)
+            MelonLogger.Msg($"BonusCalculator.AddQualityBonus: Item={item.Definition?.Name ?? "null"} failed to cast to QualityItemInstance, Type={item?.GetType().FullName ?? "null"}");
+          continue;
+        }
+        int quality = (int)qualityItem.Quality;
+        if (DebugConfig.EnableDebugLogs)
+          MelonLogger.Msg($"BonusCalculator.AddQualityBonus: Item={item.Definition?.Name ?? "null"}, Quality={quality}, QualityBonusIndex={quality}, QualityBonusValue={(quality >= 0 && quality < TopShelfConfig.QualityBonuses.Length ? TopShelfConfig.QualityBonuses[quality].Value.ToString("F2") : "invalid")}");
+
+        if (quality >= 0 && quality < TopShelfConfig.QualityBonuses.Length)
+          qualityBonus += TopShelfConfig.QualityBonuses[quality].Value;
+        else
+          MelonLogger.Warning($"BonusCalculator.AddQualityBonus: Invalid quality {quality} for item {item.Definition?.Name ?? "null"}");
+        averageQuality += quality;
+      }
+
+      if (stats.TotalItems == 0)
+      {
+        if (DebugConfig.EnableDebugLogs)
+          MelonLogger.Msg($"BonusCalculator.AddQualityBonus: No valid items after processing, skipping");
+        return;
+      }
+
+      averageQuality /= stats.TotalItems;
+      qualityBonus = qualityBonus / stats.TotalItems * basePayment;
+      float excessQualityBonus = TopShelfConfig.AboveQualityBonus.Value * averageQuality * basePayment;
+
+      float totalQualityBonus = qualityBonus + excessQualityBonus;
+      if (totalQualityBonus != 0)
+        bonuses.Add(new BonusPayment("Quality Bonus", totalQualityBonus));
+      if (DebugConfig.EnableDebugLogs)
+        MelonLogger.Msg($"BonusCalculator.AddQualityBonus: Calculated qualityBonus={qualityBonus:F2}, excessQualityBonus={excessQualityBonus:F2}, totalQualityBonus={totalQualityBonus:F2}, averageQuality={averageQuality:F2}, TotalExcessQuality={stats.TotalExcessQuality}");
     }
 
-    private static void AddAffinityBonus(List<Contract.BonusPayment> bonuses, float basePayment, ItemStats stats)
+    private static void AddAffinityBonus(List<BonusPayment> bonuses, float basePayment, ItemStats stats)
     {
-      // Only add positive affinity bonuses
+      if (DebugConfig.EnableDebugLogs)
+        MelonLogger.Msg($"BonusCalculator.AddAffinityBonus: Processing MatchingProperties={stats.MatchingProperties}, basePayment={basePayment:F2}, Matching1Bonus={TopShelfConfig.Matching1Bonus.Value:F2}, Matching2Bonus={TopShelfConfig.Matching2Bonus.Value:F2}, Matching3Bonus={TopShelfConfig.Matching3Bonus.Value:F2}");
+
       float affinityBonus = stats.MatchingProperties switch
       {
         >= 3 => TopShelfConfig.Matching3Bonus.Value,
         2 => TopShelfConfig.Matching2Bonus.Value,
         1 => TopShelfConfig.Matching1Bonus.Value,
-        _ => 0f // Do not apply negative bonus here
+        _ => 0f
       } * basePayment;
 
       if (affinityBonus != 0)
       {
-        bonuses.Add(new Contract.BonusPayment("Affinity Bonus", affinityBonus));
+        bonuses.Add(new BonusPayment("Affinity Bonus", affinityBonus));
         if (DebugConfig.EnableDebugLogs)
           MelonLogger.Msg($"BonusCalculator.AddAffinityBonus: Added Affinity Bonus={affinityBonus:F2}, MatchingProperties={stats.MatchingProperties}");
       }
+      else if (DebugConfig.EnableDebugLogs)
+        MelonLogger.Msg($"BonusCalculator.AddAffinityBonus: No Affinity Bonus applied, MatchingProperties={stats.MatchingProperties}");
     }
 
-    private static void AddAffinityPenalty(List<Contract.BonusPayment> bonuses, float basePayment, ItemStats stats)
+    private static void AddAffinityPenalty(List<BonusPayment> bonuses, float basePayment, ItemStats stats)
     {
-      float penalty = Math.Max(Math.Max(0, stats.NonMatchingProperties - stats.MatchingProperties * TopShelfConfig.IgnoreNeutral.Value) * TopShelfConfig.NeutralPenalty.Value, TopShelfConfig.MaxNeutralPenalty.Value) * basePayment;
-      float hated = Math.Max(stats.HatedProperties.Count * TopShelfConfig.HatedPenalty.Value, TopShelfConfig.MaxHatedPenalty.Value) * basePayment;
+      if (DebugConfig.EnableDebugLogs)
+        MelonLogger.Msg($"BonusCalculator.AddAffinityPenalty: Processing NonMatchingProperties={stats.NonMatchingProperties}, MatchingProperties={stats.MatchingProperties}, HatedProperties={stats.HatedProperties.Count}, basePayment={basePayment:F2}, NeutralPenalty={TopShelfConfig.NeutralPenalty.Value:F2}, MaxNeutralPenalty={TopShelfConfig.MaxNeutralPenalty.Value:F2}, HatedPenalty={TopShelfConfig.HatedPenalty.Value:F2}, MaxHatedPenalty={TopShelfConfig.MaxHatedPenalty.Value:F2}, IgnoreNeutral={TopShelfConfig.IgnoreNeutral.Value}");
 
-      // Add non-matching penalty if non-zero
-      if (penalty != 0)
-      {
-        bonuses.Add(new Contract.BonusPayment("Non-Matching Penalty", penalty));
-        if (DebugConfig.EnableDebugLogs)
-          MelonLogger.Msg($"BonusCalculator.AddAffinityPenalty: Added Non-Matching Penalty={penalty:F2}, NonMatching={stats.NonMatchingProperties}, Matching={stats.MatchingProperties}");
-      }
+      float neutralPenalty = Math.Max(Math.Max(0, stats.NonMatchingProperties - stats.MatchingProperties * TopShelfConfig.IgnoreNeutral.Value) * TopShelfConfig.NeutralPenalty.Value, TopShelfConfig.MaxNeutralPenalty.Value) * basePayment;
+      float hatedPenalty = Math.Max(stats.HatedProperties.Count * TopShelfConfig.HatedPenalty.Value, TopShelfConfig.MaxHatedPenalty.Value) * basePayment;
 
-      // Add hated penalty if non-zero
-      if (hated != 0)
+      if (DebugConfig.EnableDebugLogs)
+        MelonLogger.Msg($"BonusCalculator.AddAffinityPenalty: Calculated neutralPenalty={neutralPenalty:F2}, hatedPenalty={hatedPenalty:F2}, NonMatchingCalc=({stats.NonMatchingProperties} - {stats.MatchingProperties} * {TopShelfConfig.IgnoreNeutral.Value}) * {TopShelfConfig.NeutralPenalty.Value:F2}={((stats.NonMatchingProperties - stats.MatchingProperties * TopShelfConfig.IgnoreNeutral.Value) * TopShelfConfig.NeutralPenalty.Value):F2}, HatedCalc={stats.HatedProperties.Count} * {TopShelfConfig.HatedPenalty.Value:F2}={stats.HatedProperties.Count * TopShelfConfig.HatedPenalty.Value:F2}");
+
+      if (neutralPenalty != 0)
       {
-        bonuses.Add(new Contract.BonusPayment("Hated Penalty", hated));
+        bonuses.Add(new BonusPayment("Neutral Penalty", neutralPenalty));
         if (DebugConfig.EnableDebugLogs)
-          MelonLogger.Msg($"BonusCalculator.AddAffinityPenalty: Added Hated Penalty={hated:F2}, HatedProperties={stats.HatedProperties.Count}");
+          MelonLogger.Msg($"BonusCalculator.AddAffinityPenalty: Added Non-Matching Penalty={neutralPenalty:F2}, NonMatching={stats.NonMatchingProperties}, Matching={stats.MatchingProperties}");
       }
+      else if (DebugConfig.EnableDebugLogs)
+        MelonLogger.Msg($"BonusCalculator.AddAffinityPenalty: No Neutral Penalty applied, calculated value={neutralPenalty:F2}");
+
+      if (hatedPenalty != 0)
+      {
+        bonuses.Add(new BonusPayment("Hated Penalty", hatedPenalty));
+        if (DebugConfig.EnableDebugLogs)
+          MelonLogger.Msg($"BonusCalculator.AddAffinityPenalty: Added Hated Penalty={hatedPenalty:F2}, HatedProperties={stats.HatedProperties.Count}");
+      }
+      else if (DebugConfig.EnableDebugLogs)
+        MelonLogger.Msg($"BonusCalculator.AddAffinityPenalty: No Hated Penalty applied, calculated value={hatedPenalty:F2}");
     }
   }
 
@@ -296,6 +354,7 @@ namespace TopShelfBonus
       canvasGroup = GetComponent<CanvasGroup>();
       rectTransform = GetComponent<RectTransform>();
       contentSizeFitter = GetComponent<ContentSizeFitter>();
+      AffinityText = gameObject.transform.Find("AffinityText").GetComponent<Text>();
       canvasGroup.alpha = 1f;
       canvasGroup.blocksRaycasts = false;
       canvasGroup.interactable = false;
@@ -364,20 +423,24 @@ namespace TopShelfBonus
           color = Color.Lerp(darkGreen, green, t);
         }
         text += $"\n<color=#{ColorUtility.ToHtmlStringRGBA(color)}>•  {affinities[i].DrugType}</color>";
-        if (DebugConfig.EnableDebugLogs)
-          MelonLogger.Msg($"AffinityPopup.UpdateAffinityText: Affinity={affinity}, Range={range}, t={t:F3}, Color=({color.r:F3}, {color.g:F3}, {color.b:F3}), Hex=#{ColorUtility.ToHtmlStringRGBA(color)}");
+        if (DebugConfig.EnableDebugLogs) MelonLogger.Msg($"AffinityPopup.UpdateAffinityText: Affinity={affinity}, Range={range}, t={t:F3}, Color=({color.r:F3}, {color.g:F3}, {color.b:F3}), Hex=#{ColorUtility.ToHtmlStringRGBA(color)}");
       }
 
       text += "\n\nFavorite Effects";
       for (int i = 0; i < customer.customerData.PreferredProperties.Count; i++)
+      {
         text += "\n<color=#" + ColorUtility.ToHtmlStringRGBA(customer.customerData.PreferredProperties[i].LabelColor) + ">•  " + customer.customerData.PreferredProperties[i].Name + "</color>";
-
-      var properties = NegativeProperties[customer.NPC.GUID];
+        if (DebugConfig.EnableDebugLogs) MelonLogger.Msg($"AffinityPopup.UpdateAffinityText Favorite color=#{ColorUtility.ToHtmlStringRGBA(customer.customerData.PreferredProperties[i].LabelColor)}, Name={customer.customerData.PreferredProperties[i].Name}");
+      }
       text += "\n\nHated Effects";
-      for (int i = 0; i < properties.Count; i++)
-        text += "\n<color=#" + ColorUtility.ToHtmlStringRGBA(properties[i].LabelColor) + ">•  " + properties[i].Name + "</color>";
-
-
+      if (NegativeProperties.TryGetValue(customer.NPC.GUID, out var properties))
+      {
+        for (int i = 0; i < properties.Count; i++)
+        {
+          text += "\n<color=#" + ColorUtility.ToHtmlStringRGBA(properties[i].LabelColor) + ">•  " + properties[i].Name + "</color>";
+          if (DebugConfig.EnableDebugLogs) MelonLogger.Msg($"AffinityPopup.UpdateAffinityText: Hated color=#{ColorUtility.ToHtmlStringRGBA(properties[i].LabelColor)}, Name={properties[i].Name}");
+        }
+      }
       AffinityText.text = text;
 
       if (DebugConfig.EnableDebugLogs)
@@ -399,15 +462,16 @@ namespace TopShelfBonus
     {
       if (popupCanvas != null && popupPrefab != null)
       {
-        if (DebugConfig.EnableDebugLogs)
-          MelonLogger.Msg("AffinityPopup.GeneratePrefab: Canvas and prefab already exist.");
+        if (DebugConfig.EnableDebugLogs) MelonLogger.Msg("AffinityPopup.GeneratePrefab: Canvas and prefab already exist.");
         return;
       }
 
       popupCanvas = new GameObject("AffinityPopupCanvas");
+      if (DebugConfig.EnableDebugLogs) MelonLogger.Msg("AffinityPopup.GeneratePrefab: Canvas.");
       var canvas = popupCanvas.AddComponent<Canvas>();
       canvas.renderMode = RenderMode.ScreenSpaceOverlay;
       canvas.sortingOrder = 1000;
+      if (DebugConfig.EnableDebugLogs) MelonLogger.Msg("AffinityPopup.GeneratePrefab: CanvasScaler.");
       var scaler = popupCanvas.AddComponent<CanvasScaler>();
       scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
       scaler.referenceResolution = new Vector2(1920, 1080);
@@ -585,6 +649,32 @@ namespace TopShelfBonus
     }
   }
 
+  [HarmonyPatch(typeof(BonusPayment))]
+  public static class BonusPaymentPatch
+  {
+    [HarmonyPostfix]
+    [HarmonyPatch(MethodType.Constructor, new Type[] { typeof(string), typeof(float) })]
+    public static void BonusPaymentPostfix(BonusPayment __instance, string title, float amount)
+    {
+      if (__instance == null)
+      {
+        MelonLogger.Error("BonusPaymentPatch.BonusPaymentPostfix: __instance is null.");
+        return;
+      }
+      try
+      {
+        __instance.Title = title;
+        __instance.Amount = amount;
+        if (DebugConfig.EnableDebugLogs)
+          MelonLogger.Msg($"BonusPaymentPatch.BonusPaymentPostfix: Set Title={title}, Amount={amount:F2}");
+      }
+      catch (Exception e)
+      {
+        MelonLogger.Error($"BonusPaymentPatch.BonusPaymentPostfix: Failed to set properties for BonusPayment. Error: {e}");
+      }
+    }
+  }
+
   [HarmonyPatch(typeof(CustomerSelector))]
   public static class CustomerSelectorPatch
   {
@@ -682,20 +772,24 @@ namespace TopShelfBonus
     public static bool ProcessHandoverPrefix(Customer __instance, HandoverScreen.EHandoverOutcome outcome, Contract contract, List<ItemInstance> items, bool handoverByPlayer, bool giveBonuses)
     {
       if (DebugConfig.EnableDebugLogs)
-        MelonLogger.Msg($"ProcessHandoverPatch.Prefix customer={__instance.NPC.fullName}, outcome={outcome}, contract={contract.GUID}, items={items?.Count ?? 0}, handoverByPlayer={handoverByPlayer}, giveBonuses={giveBonuses}");
-
-      // Validate inputs
-      if (__instance == null || items == null)
       {
-        MelonLogger.Error($"ProcessHandoverPatch.Prefix Invalid input: customer={__instance}, items={items}");
-        return true; // Let original method handle error
+        MelonLogger.Msg($"ProcessHandoverPatch.Prefix: customer={__instance?.NPC.fullName ?? "null"}, outcome={outcome}, contractGUID={contract?.GUID.ToString() ?? "null"}, itemCount={items?.Count ?? 0}, handoverByPlayer={handoverByPlayer}, giveBonuses={giveBonuses}");
+        if (contract != null)
+          MelonLogger.Msg($"ProcessHandoverPatch.Prefix: contract details - Payment={contract.Payment:F2}, ProductListCount={contract.ProductList?.GetTotalQuantity() ?? 0}, QuestState={contract.QuestState}, AcceptTime={contract.AcceptTime.ToString() ?? "null"}");
+        if (items != null)
+          for (int i = 0; i < items.Count; i++)
+            MelonLogger.Msg($"ProcessHandoverPatch.Prefix: Item[{i}]={items[i]?.Definition?.Name ?? "null"}, Type={items[i]?.GetType().FullName ?? "null"}");
       }
 
-      // Cache properties
+      if (__instance == null || items == null)
+      {
+        MelonLogger.Error($"ProcessHandoverPatch.Prefix: Invalid input: customer={__instance}, items={items}");
+        return true;
+      }
+
       var npc = __instance.NPC;
       var relationData = npc.RelationData;
 
-      // Evaluate delivery and update customer state
       float highestAddiction;
       EDrugType mainType;
       int matchedProductCount;
@@ -709,30 +803,30 @@ namespace TopShelfBonus
       relationData.ChangeRelationship(relationshipChange);
 
       if (DebugConfig.EnableDebugLogs)
-        MelonLogger.Msg($"ProcessHandoverPatch.Prefix satisfaction={satisfaction:F2}, highestAddiction={highestAddiction:F2}, mainType={mainType}, matchedProductCount={matchedProductCount}, relationshipChange={relationshipChange:F2}");
+        MelonLogger.Msg($"ProcessHandoverPatch.Prefix: satisfaction={satisfaction:F2}, highestAddiction={highestAddiction:F2}, mainType={mainType}, matchedProductCount={matchedProductCount}, relationshipChange={relationshipChange:F2}, affinityChange={affinityChange:F2}");
 
-      // Initialize bonus list
-      var bonuses = new List<Contract.BonusPayment>();
+      var bonuses = new List<BonusPayment>();
       giveBonuses = true;
       if (giveBonuses)
       {
-        // Apply TopShelf bonuses (always, ignore giveBonuses)
+        if (DebugConfig.EnableDebugLogs)
+          MelonLogger.Msg($"ProcessHandoverPatch.Prefix: Calling AddTopShelfBonus for customer={__instance.NPC.fullName}, handoverByPlayer={handoverByPlayer}");
         BonusCalculator.AddTopShelfBonus(bonuses, __instance, contract, items);
 
         if (NetworkSingleton<CurfewManager>.Instance.IsCurrentlyActive)
         {
-          bonuses.Add(new Contract.BonusPayment("Curfew Bonus", contract.Payment * CurfewBonusMultiplier));
+          bonuses.Add(new BonusPayment("Curfew Bonus", contract.Payment * CurfewBonusMultiplier));
           if (DebugConfig.EnableDebugLogs)
-            MelonLogger.Msg($"ProcessHandoverPatch.Prefix Added Curfew Bonus={contract.Payment * CurfewBonusMultiplier:F2}");
+            MelonLogger.Msg($"ProcessHandoverPatch.Prefix: Added Curfew Bonus={contract.Payment * CurfewBonusMultiplier:F2}");
         }
 
         int totalQuantity = contract.ProductList.GetTotalQuantity();
         if (matchedProductCount > totalQuantity)
         {
           float generosityBonus = GenerosityBonusPerExtra * (matchedProductCount - totalQuantity);
-          bonuses.Add(new Contract.BonusPayment("Generosity Bonus", generosityBonus));
+          bonuses.Add(new BonusPayment("Generosity Bonus", generosityBonus));
           if (DebugConfig.EnableDebugLogs)
-            MelonLogger.Msg($"ProcessHandoverPatch.Prefix Added Generosity Bonus={generosityBonus:F2}, extraProducts={matchedProductCount - totalQuantity}");
+            MelonLogger.Msg($"ProcessHandoverPatch.Prefix: Added Generosity Bonus={generosityBonus:F2}, extraProducts={matchedProductCount - totalQuantity}, totalQuantity={totalQuantity}");
         }
         // todo: enable this for dealers when they do not teleport
         if (!(contract.QuestState == EQuestState.Inactive) && handoverByPlayer)
@@ -741,54 +835,41 @@ namespace TopShelfBonus
           GameDateTime end = new GameDateTime(acceptTime.elapsedDays, TimeManager.AddMinutesTo24HourTime(contract.DeliveryWindow.WindowStartTime, 60));
           if (NetworkSingleton<TimeManager>.Instance.IsCurrentDateWithinRange(acceptTime, end))
           {
-            bonuses.Add(new Contract.BonusPayment("Quick Delivery Bonus", contract.Payment * QuickDeliveryBonusMultiplier));
+            bonuses.Add(new BonusPayment("Quick Delivery Bonus", contract.Payment * QuickDeliveryBonusMultiplier));
             if (DebugConfig.EnableDebugLogs)
-            {
-              MelonLogger.Warning($"ProcessHandoverPatch.Prefix Added Quick Delivery Bonus={contract.Payment * QuickDeliveryBonusMultiplier:F2}");
-              MelonLogger.Warning($"ProcessHandoverPatch.Prefix Added Quick Delivery | title={contract.title}");
-              MelonLogger.Warning($"ProcessHandoverPatch.Prefix Added Quick Delivery | Title={contract.Title}");
-              MelonLogger.Warning($"ProcessHandoverPatch.Prefix Added Quick Delivery | Description={contract.Description}");
-              MelonLogger.Warning($"ProcessHandoverPatch.Prefix Added Quick Delivery | compassElement={contract.compassElement}");
-              MelonLogger.Warning($"ProcessHandoverPatch.Prefix Added Quick Delivery | Expires={contract.Expires}");
-              MelonLogger.Warning($"ProcessHandoverPatch.Prefix Added Quick Delivery | QuestState={contract.QuestState}");
-              MelonLogger.Warning($"ProcessHandoverPatch.Prefix Added Quick Delivery | Subtitle={contract.Subtitle}");
-            }
+              MelonLogger.Msg($"ProcessHandoverPatch.Prefix: Added Quick Delivery Bonus={contract.Payment * QuickDeliveryBonusMultiplier:F2}, acceptTime={acceptTime}, end={end}");
           }
         }
       }
 
-      // Calculate total bonus
       float totalBonus = 0f;
       foreach (var bonus in bonuses)
       {
         totalBonus += bonus.Amount;
         if (DebugConfig.EnableDebugLogs)
-          MelonLogger.Msg($"ProcessHandoverPatch.Prefix Bonus: {bonus.Title}, Amount={bonus.Amount:F2}");
+          MelonLogger.Msg($"ProcessHandoverPatch.Prefix: Bonus: Title={bonus.Title}, Amount={bonus.Amount:F2}");
       }
 
-      // Handle player handover
       if (handoverByPlayer)
       {
         Singleton<HandoverScreen>.Instance.ClearCustomerSlots(returnToOriginals: false);
         contract.SubmitPayment(totalBonus);
         if (DebugConfig.EnableDebugLogs)
-          MelonLogger.Msg($"ProcessHandoverPatch.Prefix Cleared slots, submitted payment={totalBonus:F2}");
+          MelonLogger.Msg($"ProcessHandoverPatch.Prefix: Cleared slots, submitted payment={totalBonus:F2}");
 
-        // Show popup for player transactions
         if (outcome == HandoverScreen.EHandoverOutcome.Finalize)
         {
           Singleton<DealCompletionPopup>.Instance.PlayPopup(__instance, satisfaction, relationDelta, contract.Payment, bonuses);
           if (DebugConfig.EnableDebugLogs)
-            MelonLogger.Msg($"ProcessHandoverPatch.Prefix Played popup with satisfaction={satisfaction:F2}, payment={contract.Payment}, bonuses={bonuses.Count}");
+            MelonLogger.Msg($"ProcessHandoverPatch.Prefix: Played popup with satisfaction={satisfaction:F2}, payment={contract.Payment:F2}, bonuses={bonuses.Count}, totalBonus={totalBonus:F2}");
         }
       }
       else
       {
         if (DebugConfig.EnableDebugLogs)
-          MelonLogger.Msg($"ProcessHandoverPatch.Prefix Skipped popup for non-player transaction");
+          MelonLogger.Msg($"ProcessHandoverPatch.Prefix: Skipped popup for non-player transaction");
       }
 
-      // Finalize handover
       __instance.TimeSinceLastDealCompleted = 0;
       npc.SendAnimationTrigger("GrabItem");
 
@@ -798,9 +879,8 @@ namespace TopShelfBonus
       __instance.ProcessHandoverServerSide(outcome, items, handoverByPlayer, totalPayment, contract.ProductList, satisfaction, dealerNetworkObject);
 
       if (DebugConfig.EnableDebugLogs)
-        MelonLogger.Msg($"ProcessHandoverPatch.Prefix Completed, Base payment: {contract.Payment} Total bonus: {totalBonus} Satisfaction: {satisfaction}  totalPayment={totalPayment:F2}, dealer={dealerNetworkObject?.name ?? "null"}");
+        MelonLogger.Msg($"ProcessHandoverPatch.Prefix: Completed, Base payment={contract.Payment:F2}, Total bonus={totalBonus:F2}, Satisfaction={satisfaction:F2}, totalPayment={totalPayment:F2}, dealer={dealerNetworkObject?.name ?? "null"}");
 
-      // Skip original method
       return false;
     }
 
@@ -846,7 +926,7 @@ namespace TopShelfBonus
   {
     [HarmonyPrefix]
     [HarmonyPatch("PlayPopup")]
-    public static bool PlayPopupPrefix(DealCompletionPopup __instance, Customer customer, float satisfaction, float originalRelationshipDelta, float basePayment, List<Contract.BonusPayment> bonuses)
+    public static bool PlayPopupPrefix(DealCompletionPopup __instance, Customer customer, float satisfaction, float originalRelationshipDelta, float basePayment, List<BonusPayment> bonuses)
     {
       __instance.IsPlaying = true;
       if (__instance.routine != null)
@@ -894,7 +974,7 @@ namespace TopShelfBonus
         __instance.RelationCircle.SetUnlocked(NPCRelationData.EUnlockType.Recommendation, false);
         __instance.RelationCircle.SetNotchPosition(originalRelationshipDelta);
         __instance.SetRelationshipLabel(originalRelationshipDelta);
-        yield return new WaitForSeconds(5.0f);
+        yield return new WaitForSeconds(0.2f);
         float paymentLerpTime = 1.5f;
         for (float i2 = 0f; i2 < paymentLerpTime; i2 += Time.deltaTime)
         {
@@ -902,8 +982,8 @@ namespace TopShelfBonus
           yield return new WaitForEndOfFrame();
         }
         __instance.PaymentLabel.text = "+" + MoneyManager.FormatAmount(basePayment);
-        yield return new WaitForSeconds(2.0f);
-        float satisfactionLerpTime = 1.0f;
+        yield return new WaitForSeconds(1.5f);
+        float satisfactionLerpTime = 1f;
         for (float i2 = 0f; i2 < satisfactionLerpTime; i2 += Time.deltaTime)
         {
           __instance.SatisfactionValueLabel.color = __instance.SatisfactionGradient.Evaluate(i2 / satisfactionLerpTime * satisfaction);
@@ -956,15 +1036,18 @@ namespace TopShelfBonus
           if (customer == null) return;
 
           if (!__instance.TryLoadFile(mainPath, "CustomerData", out text)) return;
-          MelonLogger.Warning($"NPCLoader.LoadPostfix: NPC {npc.fullName} json={text}");
+          if (DebugConfig.EnableDebugLogs)
+            MelonLogger.Warning($"NPCLoader.LoadPostfix: NPC {npc.fullName} json={text}");
           var jsonObject = JObject.Parse(text);
           if (jsonObject["NegativeProperties"] is JArray negativePropertiesData)
           {
-            MelonLogger.Warning($"NPCLoader.LoadPostfix: NPC {npc.fullName} found jsonObject[NegativeProperties]={jsonObject["NegativeProperties"]}");
+            if (DebugConfig.EnableDebugLogs)
+              MelonLogger.Warning($"NPCLoader.LoadPostfix: NPC {npc.fullName} found jsonObject[NegativeProperties]={jsonObject["NegativeProperties"]}");
             var negativeProperties = new List<Property>();
             var allProperties = Resources.LoadAll<Property>("Properties");
-            foreach (var propData in negativePropertiesData)
+            for (int i = 0; i < negativePropertiesData.Count; i++)
             {
+              var propData = negativePropertiesData[i];
               string propID = propData["PropertyID"]?.ToString();
               if (!string.IsNullOrEmpty(propID))
               {
@@ -972,6 +1055,7 @@ namespace TopShelfBonus
                 if (property != null)
                   negativeProperties.Add(property);
                 else
+                  if (DebugConfig.EnableDebugLogs)
                   MelonLogger.Warning($"NPCLoader.LoadPostfix: Failed to load Property with ID: {propID} for NPC {npc.fullName}");
               }
             }
@@ -1000,7 +1084,8 @@ namespace TopShelfBonus
     [HarmonyPatch("Open")]
     public static bool OpenPrefix(ContactsDetailPanel __instance, NPC npc)
     {
-      MelonLogger.Warning($"Customer.OpenPrefix for customer={npc.fullName}");
+      if (DebugConfig.EnableDebugLogs)
+        MelonLogger.Warning($"Customer.OpenPrefix for customer={npc.fullName}");
       __instance.PropertiesLabel.alignment = TextAnchor.UpperLeft;
       return true;
     }
@@ -1009,16 +1094,17 @@ namespace TopShelfBonus
     [HarmonyPatch("Open")]
     public static void OpenPostfix(ContactsDetailPanel __instance, NPC npc)
     {
-      MelonLogger.Warning($"Customer.OpenPostfix for customer={npc.fullName}");
+      if (DebugConfig.EnableDebugLogs)
+        MelonLogger.Warning($"Customer.OpenPostfix for customer={npc.fullName}");
       Customer component = npc.GetComponent<Customer>();
       if (component != null)
       {
         __instance.PropertiesLabel.text += "\n\nHated Effects";
-        var properties = NegativeProperties[npc.GUID];
-        for (int i = 0; i < properties.Count; i++)
-        {
-          __instance.PropertiesLabel.text += $"\n<color=#{ColorUtility.ToHtmlStringRGBA(properties[i].LabelColor)}>•  {properties[i].Name}</color>";
-        }
+        if (NegativeProperties.TryGetValue(npc.GUID, out var properties))
+          for (int i = 0; i < properties.Count; i++)
+          {
+            __instance.PropertiesLabel.text += $"\n<color=#{ColorUtility.ToHtmlStringRGBA(properties[i].LabelColor)}>•  {properties[i].Name}</color>";
+          }
       }
     }
   }
