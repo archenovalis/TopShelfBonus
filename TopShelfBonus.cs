@@ -1,39 +1,41 @@
 using MelonLoader;
 using HarmonyLib;
-using ScheduleOne.Economy;
-using ScheduleOne.ItemFramework;
-using ScheduleOne.Product;
-using ScheduleOne.Quests;
-using ScheduleOne.UI.Handover;
-using ScheduleOne.Properties;
+using Il2CppScheduleOne.Economy;
+using Il2CppScheduleOne.ItemFramework;
+using Il2CppScheduleOne.Product;
+using Il2CppScheduleOne.Quests;
+using Il2CppScheduleOne.UI.Handover;
+using Il2CppScheduleOne.Properties;
 
-using static TopShelfBonus.TopShelfExtensions;
-using static TopShelfBonus.TopShelfUtilities;
+using static TopShelfBonus_IL2CPP.TopShelfExtensions;
+using static TopShelfBonus_IL2CPP.TopShelfUtilities;
 using UnityEngine;
-using ScheduleOne.UI.Phone.ContactsApp;
+using Il2CppScheduleOne.UI.Phone.ContactsApp;
 using UnityEngine.UI;
-using ScheduleOne.NPCs;
-using ScheduleOne.DevUtilities;
+using Il2CppScheduleOne.NPCs;
+using Il2CppScheduleOne.DevUtilities;
 using UnityEngine.EventSystems;
-using ScheduleOne.UI.Phone;
-using ScheduleOne.UI.Phone.Messages;
-using ScheduleOne.UI;
+using Il2CppScheduleOne.UI.Phone;
+using Il2CppScheduleOne.UI.Phone.Messages;
+using Il2CppScheduleOne.UI;
 using CanvasScaler = UnityEngine.UI.CanvasScaler;
-using ScheduleOne;
-using Newtonsoft.Json.Linq;
-using ScheduleOne.Persistence.Loaders;
-using ScheduleOne.Persistence.Datas;
-using FishNet.Object;
-using ScheduleOne.GameTime;
-using ScheduleOne.Law;
-using System.Collections;
-using ScheduleOne.Money;
-using ScheduleOne.NPCs.Relation;
+using Il2CppScheduleOne;
+using Il2CppNewtonsoft.Json.Linq;
+using Il2CppScheduleOne.Persistence.Loaders;
+using Il2CppScheduleOne.Persistence.Datas;
+using Il2CppFishNet.Object;
+using Il2CppScheduleOne.GameTime;
+using Il2CppScheduleOne.Law;
+using Il2CppSystem.Collections;
+using Il2CppScheduleOne.Money;
+using Il2CppScheduleOne.NPCs.Relation;
+using Il2CppInterop.Runtime;
+using UnityEngine.Events;
 
-[assembly: MelonInfo(typeof(TopShelfBonus.TopShelfBonus), "TopShelfBonus-Mono", "1.1.0", "Archie", "Adds 5% bonus for delivering items with quality above the customer's required standards.")]
+[assembly: MelonInfo(typeof(TopShelfBonus_IL2CPP.TopShelfBonus), "TopShelfBonus_Standard", "1.1.0", "Archie", "Adds 5% bonus for delivering items with quality above the customer's required standards.")]
 [assembly: MelonGame("TVGS", "Schedule I")]
 [assembly: HarmonyDontPatchAll]
-namespace TopShelfBonus
+namespace TopShelfBonus_IL2CPP
 {
   public static class DebugConfig
   {
@@ -47,11 +49,11 @@ namespace TopShelfBonus
       try
       {
         HarmonyInstance.PatchAll();
-        MelonLogger.Msg("TopShelfBonus-Mono initialized.");
+        MelonLogger.Msg("TopShelfBonus_Standard initialized.");
       }
       catch (Exception e)
       {
-        MelonLogger.Error($"Failed to initialize NoLazyWorkers_Alternative: {e}");
+        MelonLogger.Error($"Failed to initialize TopShelfBonus_Standard: {e}");
       }
       TopShelfConfig.Initialize();
     }
@@ -119,7 +121,7 @@ namespace TopShelfBonus
       public static AffinityPopup popup;
     }
     public static GameObject popupPrefab;
-    public static Dictionary<Guid, List<Property>> NegativeProperties = new();
+    public static Dictionary<Il2CppSystem.Guid, List<Property>> NegativeProperties = new();
 
     public struct ItemStats
     {
@@ -151,6 +153,49 @@ namespace TopShelfBonus
 
       if (DebugConfig.EnableDebugLogs)
         MelonLogger.Msg($"Initialized negative properties for customer {customer.NPC.fullName} (GUID: {guid}): {string.Join(", ", NegativeProperties[guid].Select(p => p.Name))}");
+    }
+
+    /// <summary>
+    /// Converts a System.Collections.Generic.List<T> to an Il2CppSystem.Collections.Generic.List<T>.
+    /// </summary>
+    /// <typeparam name="T">The type of elements in the list, must inherit from Il2CppSystem.Object.</typeparam>
+    /// <param name="systemList">The System list to convert.</param>
+    /// <returns>An Il2CppSystem list containing the same elements, or an empty list if the input is null.</returns>
+    public static Il2CppSystem.Collections.Generic.List<T> ConvertList<T>(List<T> systemList)
+        where T : Il2CppSystem.Object
+    {
+      if (systemList == null)
+        return new Il2CppSystem.Collections.Generic.List<T>();
+
+      Il2CppSystem.Collections.Generic.List<T> il2cppList = new(systemList.Count);
+      foreach (var item in systemList)
+      {
+        if (item != null)
+          il2cppList.Add(item);
+      }
+      return il2cppList;
+    }
+
+    /// <summary>
+    /// Converts an Il2CppSystem.Collections.Generic.List<T> to a System.Collections.Generic.List<T>.
+    /// </summary>
+    /// <typeparam name="T">The type of elements in the list, must inherit from Il2CppSystem.Object.</typeparam>
+    /// <param name="il2cppList">The Il2CppSystem list to convert.</param>
+    /// <returns>A System list containing the same elements, or an empty list if the input is null.</returns>
+    public static List<T> ConvertList<T>(Il2CppSystem.Collections.Generic.List<T> il2cppList)
+        where T : Il2CppSystem.Object
+    {
+      if (il2cppList == null)
+        return [];
+
+      List<T> systemList = new(il2cppList.Count);
+      for (int i = 0; i < il2cppList.Count; i++)
+      {
+        var item = il2cppList[i];
+        if (item != null)
+          systemList.Add(item);
+      }
+      return systemList;
     }
   }
 
@@ -188,7 +233,7 @@ namespace TopShelfBonus
     {
       var stats = new ItemStats { HatedProperties = new HashSet<Property>() };
       int requiredQuality = (int)StandardsMethod.GetCorrespondingQuality(customer.customerData.Standards);
-      var preferredProperties = new HashSet<Property>(customer.customerData.PreferredProperties);
+      var preferredProperties = new HashSet<Property>(customer.customerData.PreferredProperties._items);
 
       foreach (var item in items)
       {
@@ -199,7 +244,7 @@ namespace TopShelfBonus
           if (itemQuality > requiredQuality)
             stats.TotalExcessQuality += itemQuality - requiredQuality;
 
-          var properties = (productItem.Definition as ProductDefinition)?.Properties ?? new List<Property>();
+          List<Property> properties = productItem.Definition.TryCast<ProductDefinition>()?.Properties._items.ToList() ?? new();
           foreach (var property in properties)
           {
             if (preferredProperties.Contains(property))
@@ -278,7 +323,6 @@ namespace TopShelfBonus
       }
     }
   }
-
 
   public class AffinityPopup : MonoBehaviour
   {
@@ -492,7 +536,7 @@ namespace TopShelfBonus
           EventTrigger mugshotTrigger = mugshotTransform.GetComponent<EventTrigger>() ?? mugshotTransform.gameObject.AddComponent<EventTrigger>();
           mugshotTrigger.triggers.Clear();
           var mugshotEnter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
-          mugshotEnter.callback.AddListener((data) =>
+          mugshotEnter.callback.AddListener(DelegateSupport.ConvertDelegate<UnityAction<BaseEventData>>((BaseEventData data) =>
           {
             // Destroy existing popup
             if (PopupHolder.popup != null)
@@ -513,9 +557,9 @@ namespace TopShelfBonus
             PopupHolder.popup.Show(customer, Input.mousePosition);
             if (DebugConfig.EnableDebugLogs)
               MelonLogger.Msg($"DealerManagementApp: Mugshot PointerEnter created popup for customer={customer.NPC.fullName}");
-          });
+          }));
           var mugshotExit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
-          mugshotExit.callback.AddListener((data) =>
+          mugshotExit.callback.AddListener(DelegateSupport.ConvertDelegate<UnityAction<BaseEventData>>((BaseEventData data) =>
           {
             if (PopupHolder.popup != null)
             {
@@ -524,7 +568,7 @@ namespace TopShelfBonus
               if (DebugConfig.EnableDebugLogs)
                 MelonLogger.Msg($"DealerManagementApp: Mugshot PointerExit destroyed popup for customer={customer.NPC.fullName}");
             }
-          });
+          }));
           mugshotTrigger.triggers.Add(mugshotEnter);
           mugshotTrigger.triggers.Add(mugshotExit);
 
@@ -545,7 +589,7 @@ namespace TopShelfBonus
           EventTrigger nameTrigger = nameTransform.GetComponent<EventTrigger>() ?? nameTransform.gameObject.AddComponent<EventTrigger>();
           nameTrigger.triggers.Clear();
           var nameEnter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
-          nameEnter.callback.AddListener((data) =>
+          nameEnter.callback.AddListener(DelegateSupport.ConvertDelegate<UnityAction<BaseEventData>>((BaseEventData data) =>
           {
             // Destroy existing popup
             if (PopupHolder.popup != null)
@@ -566,9 +610,9 @@ namespace TopShelfBonus
             PopupHolder.popup.Show(customer, Input.mousePosition);
             if (DebugConfig.EnableDebugLogs)
               MelonLogger.Msg($"DealerManagementApp: Name PointerEnter created popup for customer={customer.NPC.fullName}");
-          });
+          }));
           var nameExit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
-          nameExit.callback.AddListener((data) =>
+          nameExit.callback.AddListener(DelegateSupport.ConvertDelegate<UnityAction<BaseEventData>>((BaseEventData data) =>
           {
             if (PopupHolder.popup != null)
             {
@@ -577,7 +621,7 @@ namespace TopShelfBonus
               if (DebugConfig.EnableDebugLogs)
                 MelonLogger.Msg($"DealerManagementApp: Name PointerExit destroyed popup for customer={customer.NPC.fullName}");
             }
-          });
+          }));
           nameTrigger.triggers.Add(nameEnter);
           nameTrigger.triggers.Add(nameExit);
         }
@@ -599,7 +643,7 @@ namespace TopShelfBonus
       trigger.triggers.Clear();
 
       var enter = new EventTrigger.Entry { eventID = EventTriggerType.PointerEnter };
-      enter.callback.AddListener((data) =>
+      enter.callback.AddListener(DelegateSupport.ConvertDelegate<UnityAction<BaseEventData>>((BaseEventData data) =>
       {
         // Destroy existing popup
         if (PopupHolder.popup != null)
@@ -620,11 +664,11 @@ namespace TopShelfBonus
         PopupHolder.popup.Show(customer, Input.mousePosition);
         if (DebugConfig.EnableDebugLogs)
           MelonLogger.Msg($"CustomerSelector: PointerEnter created popup for customer={customer.NPC.fullName}");
-      });
+      }));
       trigger.triggers.Add(enter);
 
       var exit = new EventTrigger.Entry { eventID = EventTriggerType.PointerExit };
-      exit.callback.AddListener((data) =>
+      exit.callback.AddListener(DelegateSupport.ConvertDelegate<UnityAction<BaseEventData>>((BaseEventData data) =>
       {
         if (PopupHolder.popup != null)
         {
@@ -633,11 +677,11 @@ namespace TopShelfBonus
           if (DebugConfig.EnableDebugLogs)
             MelonLogger.Msg($"CustomerSelector: PointerExit destroyed popup for customer={customer.NPC.fullName}");
         }
-      });
+      }));
       trigger.triggers.Add(exit);
 
       var click = new EventTrigger.Entry { eventID = EventTriggerType.PointerClick };
-      click.callback.AddListener((data) =>
+      click.callback.AddListener(DelegateSupport.ConvertDelegate<UnityAction<BaseEventData>>((BaseEventData data) =>
       {
         if (PopupHolder.popup != null)
         {
@@ -646,7 +690,7 @@ namespace TopShelfBonus
           if (DebugConfig.EnableDebugLogs)
             MelonLogger.Msg($"CustomerSelector: PointerClick destroyed popup for customer={customer.NPC.fullName}");
         }
-      });
+      }));
       trigger.triggers.Add(click);
     }
 
@@ -678,8 +722,8 @@ namespace TopShelfBonus
     /// Overrides ProcessHandover to apply TopShelf bonuses for all transactions.
     /// </summary>
     [HarmonyPrefix]
-    [HarmonyPatch("ProcessHandover", typeof(HandoverScreen.EHandoverOutcome), typeof(Contract), typeof(List<ItemInstance>), typeof(bool), typeof(bool))]
-    public static bool ProcessHandoverPrefix(Customer __instance, HandoverScreen.EHandoverOutcome outcome, Contract contract, List<ItemInstance> items, bool handoverByPlayer, bool giveBonuses)
+    [HarmonyPatch("ProcessHandover", typeof(HandoverScreen.EHandoverOutcome), typeof(Contract), typeof(Il2CppSystem.Collections.Generic.List<ItemInstance>), typeof(bool), typeof(bool))]
+    public static bool ProcessHandoverPrefix(Customer __instance, HandoverScreen.EHandoverOutcome outcome, Contract contract, Il2CppSystem.Collections.Generic.List<ItemInstance> items, bool handoverByPlayer, bool giveBonuses)
     {
       if (DebugConfig.EnableDebugLogs)
         MelonLogger.Msg($"ProcessHandoverPatch.Prefix customer={__instance.NPC.fullName}, outcome={outcome}, contract={contract.GUID}, items={items?.Count ?? 0}, handoverByPlayer={handoverByPlayer}, giveBonuses={giveBonuses}");
@@ -717,7 +761,7 @@ namespace TopShelfBonus
       if (giveBonuses)
       {
         // Apply TopShelf bonuses (always, ignore giveBonuses)
-        BonusCalculator.AddTopShelfBonus(bonuses, __instance, contract, items);
+        BonusCalculator.AddTopShelfBonus(bonuses, __instance, contract, items._items.ToList());
 
         if (NetworkSingleton<CurfewManager>.Instance.IsCurrentlyActive)
         {
@@ -777,7 +821,7 @@ namespace TopShelfBonus
         // Show popup for player transactions
         if (outcome == HandoverScreen.EHandoverOutcome.Finalize)
         {
-          Singleton<DealCompletionPopup>.Instance.PlayPopup(__instance, satisfaction, relationDelta, contract.Payment, bonuses);
+          Singleton<DealCompletionPopup>.Instance.PlayPopup(__instance, satisfaction, relationDelta, contract.Payment, ConvertList(bonuses));
           if (DebugConfig.EnableDebugLogs)
             MelonLogger.Msg($"ProcessHandoverPatch.Prefix Played popup with satisfaction={satisfaction:F2}, payment={contract.Payment}, bonuses={bonuses.Count}");
         }
@@ -829,7 +873,7 @@ namespace TopShelfBonus
             MelonLogger.Msg($"Customer.GetSaveStringPostfix: Added {negativeProperties.Count} NegativeProperties for customer {__instance.NPC.fullName}");
         }
 
-        __result = json.ToString(Newtonsoft.Json.Formatting.Indented);
+        __result = json.ToString(Il2CppNewtonsoft.Json.Formatting.Indented);
 
         if (DebugConfig.EnableDebugLogs)
           MelonLogger.Msg($"Customer.GetSaveStringPostfix: Saved JSON for customer {__instance.NPC.fullName}: {__result}");
@@ -854,11 +898,11 @@ namespace TopShelfBonus
         __instance.StopCoroutine(__instance.routine);
       }
 
-      __instance.routine = __instance.StartCoroutine(Routine());
+      __instance.routine = (Coroutine)MelonCoroutines.Start(Routine());
       // Skip the original method
       return false;
 
-      IEnumerator Routine()
+      System.Collections.IEnumerator Routine()
       {
         // Set IsPlaying to true
         __instance.IsPlaying = true;
@@ -926,7 +970,7 @@ namespace TopShelfBonus
 
         __instance.RelationCircle.SetNotchPosition(endDelta);
         __instance.SetRelationshipLabel(endDelta);
-        yield return new WaitUntil(() => __instance.Group.alpha == 0f);
+        yield return new WaitUntil(DelegateSupport.ConvertDelegate<Il2CppSystem.Func<bool>>(() => __instance.Group.alpha == 0f));
         __instance.Canvas.enabled = false;
         __instance.Container.gameObject.SetActive(false);
         __instance.IsPlaying = false;
@@ -950,7 +994,7 @@ namespace TopShelfBonus
         if (__instance.TryLoadFile(mainPath, "NPC", out text))
         {
           NPCData data = JsonUtility.FromJson<NPCData>(text);
-          NPC npc = NPCManager.NPCRegistry.FirstOrDefault(x => x.ID == data.ID);
+          NPC npc = NPCManager.NPCRegistry._items.FirstOrDefault(x => x.ID == data.ID);
           if (npc == null) return;
           Customer customer = npc.GetComponent<Customer>();
           if (customer == null) return;
@@ -958,13 +1002,14 @@ namespace TopShelfBonus
           if (!__instance.TryLoadFile(mainPath, "CustomerData", out text)) return;
           MelonLogger.Warning($"NPCLoader.LoadPostfix: NPC {npc.fullName} json={text}");
           var jsonObject = JObject.Parse(text);
-          if (jsonObject["NegativeProperties"] is JArray negativePropertiesData)
+          if (jsonObject["NegativeProperties"].TryCast<JArray>() is JArray negativePropertiesData)
           {
             MelonLogger.Warning($"NPCLoader.LoadPostfix: NPC {npc.fullName} found jsonObject[NegativeProperties]={jsonObject["NegativeProperties"]}");
             var negativeProperties = new List<Property>();
             var allProperties = Resources.LoadAll<Property>("Properties");
-            foreach (var propData in negativePropertiesData)
+            for (int i = 0; i < negativeProperties.Count; i++)
             {
+              var propData = negativePropertiesData[i];
               string propID = propData["PropertyID"]?.ToString();
               if (!string.IsNullOrEmpty(propID))
               {
