@@ -97,7 +97,7 @@ namespace TopShelfBonus
       Matching2Bonus = Category.CreateEntry("Matching2Bonus", 0.12f, "Bonus for 2 matching affinities");
       Matching3Bonus = Category.CreateEntry("Matching3Bonus", 0.25f, "Bonus for 3 matching affinities");
       MinHated = Category.CreateEntry("MinHated", 0, "Minimum number of negatice affinities per customer");
-      MaxHated = Category.CreateEntry("MinHated", 0, "Maximum number of negatice affinities per customer");
+      MaxHated = Category.CreateEntry("MaxHated", 3, "Maximum number of negatice affinities per customer");
       HatedPenalty = Category.CreateEntry("HatedPenalty", -0.15f, "Penalty per hated affinity");
       MaxHatedPenalty = Category.CreateEntry("MaxHatedPenalty", -0.45f, "Max Penalty for hated affinities");
       NeutralPenalty = Category.CreateEntry("NeutralPenalty", -0.03f, "Penalty per neutral affinity");
