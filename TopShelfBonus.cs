@@ -32,7 +32,7 @@ using Il2CppInterop.Runtime;
 using UnityEngine.Events;
 using static Il2CppScheduleOne.Quests.Contract;
 
-[assembly: MelonInfo(typeof(TopShelfBonus_IL2CPP.TopShelfBonus), "TopShelfBonus_Standard", "1.1.2", "Archie", "Adds 5% bonus for delivering items with quality above the customer's required standards.")]
+[assembly: MelonInfo(typeof(TopShelfBonus_IL2CPP.TopShelfBonus), "TopShelfBonus_Standard", "1.1.3", "Archie", "Adds 5% bonus for delivering items with quality above the customer's required standards.")]
 [assembly: MelonGame("TVGS", "Schedule I")]
 [assembly: HarmonyDontPatchAll]
 namespace TopShelfBonus_IL2CPP
@@ -1081,7 +1081,14 @@ namespace TopShelfBonus_IL2CPP
           if (DebugConfig.EnableDebugLogs)
             MelonLogger.Warning($"NPCLoader.LoadPostfix: NPC {npc.fullName} json={text}");
           var jsonObject = JObject.Parse(text);
-          if (jsonObject["NegativeProperties"].TryCast<JArray>() is JArray negativePropertiesData)
+          if (jsonObject["NegativeProperties"] == null)
+          {
+            // No saved data, initialize new NegativeProperties
+            InitializeNegativeProperties(customer);
+            if (DebugConfig.EnableDebugLogs)
+              MelonLogger.Msg($"NPCLoader.LoadPostfix: Initialized NegativeProperties for customer {customer.NPC.fullName} (GUID: {customer.NPC.GUID})");
+          }
+          else if (jsonObject["NegativeProperties"].TryCast<JArray>() is JArray negativePropertiesData)
           {
             if (DebugConfig.EnableDebugLogs)
               MelonLogger.Warning($"NPCLoader.LoadPostfix: NPC {npc.fullName} found jsonObject[NegativeProperties]={jsonObject["NegativeProperties"]}");
@@ -1106,10 +1113,6 @@ namespace TopShelfBonus_IL2CPP
               MelonLogger.Msg($"NPCLoader.LoadPostfix: Loaded {negativeProperties.Count} NegativeProperties for customer {customer.NPC.fullName} (GUID: {customer.NPC.GUID})");
             return;
           }
-          // No saved data, initialize new NegativeProperties
-          InitializeNegativeProperties(customer);
-          if (DebugConfig.EnableDebugLogs)
-            MelonLogger.Msg($"NPCLoader.LoadPostfix: Initialized NegativeProperties for customer {customer.NPC.fullName} (GUID: {customer.NPC.GUID})");
         }
       }
       catch (Exception e)
