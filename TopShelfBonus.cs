@@ -31,7 +31,7 @@ using ScheduleOne.Money;
 using ScheduleOne.NPCs.Relation;
 using static ScheduleOne.Quests.Contract;
 
-[assembly: MelonInfo(typeof(TopShelfBonus.TopShelfBonus), "TopShelfBonus-Mono", "1.1.3", "Archie", "Adds 5% bonus for delivering items with quality above the customer's required standards.")]
+[assembly: MelonInfo(typeof(TopShelfBonus.TopShelfBonus), "TopShelfBonus-Mono", "1.1.4", "Archie", "Adds 5% bonus for delivering items with quality above the customer's required standards.")]
 [assembly: MelonGame("TVGS", "Schedule I")]
 [assembly: HarmonyDontPatchAll]
 namespace TopShelfBonus
@@ -1021,61 +1021,58 @@ namespace TopShelfBonus
   public static class NPCLoaderPatch
   {
     [HarmonyPostfix]
-    [HarmonyPatch("Load")]
-    public static void LoadPostfix(NPCLoader __instance, string mainPath)
+    [HarmonyPatch(nameof(NPCLoader.Load), new Type[] { typeof(DynamicSaveData) })]
+    public static void LoadPostfix(NPCLoader __instance, DynamicSaveData saveData)
     {
       try
       {
-        string text;
-        if (__instance.TryLoadFile(mainPath, "NPC", out text))
-        {
-          NPCData data = JsonUtility.FromJson<NPCData>(text);
-          NPC npc = NPCManager.NPCRegistry.FirstOrDefault(x => x.ID == data.ID);
-          if (npc == null) return;
-          Customer customer = npc.GetComponent<Customer>();
-          if (customer == null) return;
+        NPCData baseData = saveData.ExtractBaseData<NPCData>();
+        if (baseData == null) return;
 
-          if (!__instance.TryLoadFile(mainPath, "CustomerData", out text)) return;
+        NPC npc = NPCManager.NPCRegistry.FirstOrDefault(x => x.ID == baseData.ID);
+        if (npc == null) return;
+
+        Customer customer = npc.GetComponent<Customer>();
+        if (customer == null) return;
+
+        if (!saveData.TryGetData("CustomerData", out string customerDataJson)) return;
+        if (DebugConfig.EnableDebugLogs)
+          MelonLogger.Warning($"NPCLoader.LoadPostfix: NPC {npc.fullName} json={customerDataJson}");
+        var jsonObject = JObject.Parse(customerDataJson);
+        if (jsonObject["NegativeProperties"] == null)
+        {
+          // No saved data, initialize new NegativeProperties
+          InitializeNegativeProperties(customer);
           if (DebugConfig.EnableDebugLogs)
-            MelonLogger.Warning($"NPCLoader.LoadPostfix: NPC {npc.fullName} json={text}");
-          var jsonObject = JObject.Parse(text);
-          if (jsonObject["NegativeProperties"] == null)
+            MelonLogger.Msg($"NPCLoader.LoadPostfix: Initialized NegativeProperties for customer {customer.NPC.fullName} (GUID: {customer.NPC.GUID})");
+        }
+        else if (jsonObject["NegativeProperties"] is JArray negativePropertiesData)
+        {
+          if (DebugConfig.EnableDebugLogs)
+            MelonLogger.Warning($"NPCLoader.LoadPostfix: NPC {npc.fullName} found jsonObject[NegativeProperties]={jsonObject["NegativeProperties"]}");
+          var negativeProperties = new List<Property>();
+          var allProperties = Resources.LoadAll<Property>("Properties");
+          for (int i = 0; i < negativePropertiesData.Count; i++)
           {
-            // No saved data, initialize new NegativeProperties
-            InitializeNegativeProperties(customer);
-            if (DebugConfig.EnableDebugLogs)
-              MelonLogger.Msg($"NPCLoader.LoadPostfix: Initialized NegativeProperties for customer {customer.NPC.fullName} (GUID: {customer.NPC.GUID})");
-          }
-          else if (jsonObject["NegativeProperties"] is JArray negativePropertiesData)
-          {
-            if (DebugConfig.EnableDebugLogs)
-              MelonLogger.Warning($"NPCLoader.LoadPostfix: NPC {npc.fullName} found jsonObject[NegativeProperties]={jsonObject["NegativeProperties"]}");
-            var negativeProperties = new List<Property>();
-            var allProperties = Resources.LoadAll<Property>("Properties");
-            for (int i = 0; i < negativePropertiesData.Count; i++)
+            var propData = negativePropertiesData[i];
+            string propID = propData["PropertyID"]?.ToString();
+            if (!string.IsNullOrEmpty(propID))
             {
-              var propData = negativePropertiesData[i];
-              string propID = propData["PropertyID"]?.ToString();
-              if (!string.IsNullOrEmpty(propID))
-              {
-                var property = allProperties.FirstOrDefault(p => p.ID == propID);
-                if (property != null)
-                  negativeProperties.Add(property);
-                else
-                  if (DebugConfig.EnableDebugLogs)
-                  MelonLogger.Warning($"NPCLoader.LoadPostfix: Failed to load Property with ID: {propID} for NPC {npc.fullName}");
-              }
+              var property = allProperties.FirstOrDefault(p => p.ID == propID);
+              if (property != null)
+                negativeProperties.Add(property);
+              else if (DebugConfig.EnableDebugLogs)
+                MelonLogger.Warning($"NPCLoader.LoadPostfix: Failed to load Property with ID: {propID} for NPC {npc.fullName}");
             }
-            NegativeProperties[customer.NPC.GUID] = negativeProperties;
-            if (DebugConfig.EnableDebugLogs)
-              MelonLogger.Msg($"NPCLoader.LoadPostfix: Loaded {negativeProperties.Count} NegativeProperties for customer {customer.NPC.fullName} (GUID: {customer.NPC.GUID})");
-            return;
           }
+          NegativeProperties[customer.NPC.GUID] = negativeProperties;
+          if (DebugConfig.EnableDebugLogs)
+            MelonLogger.Msg($"NPCLoader.LoadPostfix: Loaded {negativeProperties.Count} NegativeProperties for customer {customer.NPC.fullName} (GUID: {customer.NPC.GUID})");
         }
       }
       catch (Exception e)
       {
-        MelonLogger.Error($"NPCLoader.LoadPostfix: Failed for {mainPath}, error: {e}");
+        MelonLogger.Error($"NPCLoader.LoadPostfix: Failed for {__instance.NPCType}, error: {e}");
       }
     }
   }
